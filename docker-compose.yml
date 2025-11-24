@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  jetson-os-builder:
+    container_name: jetson-os-builder
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - JETPACK_VERSION=7.0
+        - L4T_VERSION=37.0.0
+        - BSP_URL=https://developer.nvidia.com/downloads/embedded/l4t/r37_release_v0.0/release/jetson_linux_r37.0.0_aarch64.tbz2
+        - ROOTFS_URL=https://developer.nvidia.com/downloads/embedded/l4t/r37_release_v0.0/release/tegra_linux_sample-root-filesystem_r37.0.0_aarch64.tbz2
+        - DEFAULT_USERNAME=Arche
+        - DEFAULT_PASSWORD=Arche
+    privileged: true
+    volumes:
+      - ./scripts:/workspace/scripts:ro
+      - /dev:/dev
+      - /run/udev:/run/udev:ro
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+    environment:
+      - BOARD=jetson-orin-nano-devkit
+      - FLASH_CMD=flash.sh jetson-orin-nano-devkit internal
+    stdin_open: true
+    tty: true
+
+  

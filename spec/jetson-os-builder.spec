@@ -1,10 +1,149 @@
 Title: Jetson Provisioning & Flashing Pipeline Specification
-Version: 1.0
-Owner: Thomas Cousins
 
 1. Overview
-   This specification defines a reproducible, one-shot provisioning and flashing pipeline for NVIDIA Jetson devices (Orin Nano Super class) built and executed from an x86 Windows workstation.
-   All provisioning occurs inside a Linux environment running under WSL2 and docker.
+
+   This specification defines a reproducible, one-shot provisioning and flashing pipeline for NVIDIA Jetson devices (Orin Nano Super class) built and executed from an x86 Windows workstation or Linux environment.
+   All provisioning occurs inside a Linux environment running under WSL2 and using Docker to flash the devices and build the rootfs.
+   Rootfs customization is performed via cross-architecture chroot using qemu-user-static and binfmt_misc.
+   Final flashing uses NVIDIA's standard flash scripts.
+
+2. Goals
+
+- Single-command (one-shot) flashing of a fully customized image.
+
+- No post-flash manual steps; device is usable at first boot with pre-configured user account.
+
+- Fully reproducible builds under version control.
+
+- Works from any x86 Windows machine without dedicated Ubuntu hardware via the use of containers.
+
+- Efficient build caching - BSP setup happens once during image build, not on every run.
+
+3. High-Level Method
+
+- WSL2 provides a Linux environment capable of running Docker.
+
+- Docker container based on Ubuntu 24.04 (aligned with JetPack 7) provides the build environment.
+
+- NVIDIA L4T BSP and base rootfs are downloaded and unpacked during Docker image build time (cached in image layers).
+
+- NVIDIA binaries are applied to the rootfs via apply_binaries.sh during image build.
+
+- Default user account is created via l4t_create_default_user.sh during image build.
+
+- At runtime, rootfs is customized via cross-architecture chroot using qemu-aarch64-static and binfmt_misc.
+
+- Customization scripts (provided by the user) modify the ARM root filesystem within the chroot environment (install packages, enable/disable services, add configs, add applications).
+
+- NVIDIA's flash.sh or l4t_initrd_flash.sh is executed to flash the final customized image directly to the target device via USB recovery mode.
+
+4. Repository Layout
+    /scripts/
+        00-test-setup/
+            run.sh
+        01-systemd/
+            run.sh
+        (additional numbered directories)
+    /spec/
+        jetson-os-builder.spec
+    docker-compose.yml
+    Dockerfile
+    entrypoint.sh
+    README.md
+
+5. BSP and Rootfs Management
+
+   BSP and rootfs are downloaded during the Docker image build phase (not at runtime).
+   This provides:
+   - Faster container startup (download only happens once)
+   - Docker layer caching (rebuild is fast if BSP version hasn't changed)
+   - Consistent build environment across all runs
+   
+   Version configuration is set via build args in docker-compose.yml:
+   - JETPACK_VERSION (default: 7.0)
+   - L4T_VERSION (default: 37.0.0)
+   - BSP_URL and ROOTFS_URL (download links)
+
+6. User Configuration
+
+   Default user account credentials are configured in docker-compose.yml:
+   - DEFAULT_USERNAME (default: Arche)
+   - DEFAULT_PASSWORD (default: Arche)
+   
+   Board and flash command are set as runtime environment variables:
+   - BOARD (e.g., jetson-orin-nano-devkit)
+   - FLASH_CMD (e.g., flash.sh jetson-orin-nano-devkit internal)
+
+7. Build Phase (Dockerfile)
+   
+   During `docker-compose build`:
+   1. Install essential packages (qemu-user-static, binfmt-support, wget, etc.)
+   2. Download and extract NVIDIA L4T BSP
+   3. Download and extract sample rootfs
+   4. Run apply_binaries.sh to apply NVIDIA binaries to rootfs
+   5. Run l4t_create_default_user.sh to create default user account
+   6. Copy customization scripts and entrypoint into image
+   
+   Result: Docker image contains a ready-to-customize rootfs with NVIDIA binaries applied.
+
+8. Runtime Phase (entrypoint.sh)
+   
+   During `docker-compose up`:
+   1. Verify BSP is present (should be from build phase)
+   2. Copy qemu-aarch64-static into rootfs for ARM emulation
+   3. Run user customization scripts in numerical order within ARM chroot environment
+   4. Clean up qemu binary
+   5. Wait for user confirmation
+   6. Execute flash command to write image to Jetson device
+   
+   Scripts are executed in sorted order (00-*, 01-*, 02-*, etc.)
+
+9. Customization Scripts
+
+   Users add scripts in /scripts directory using this structure:
+   
+   /scripts/NN-description/run.sh
+   
+   Where NN is a two-digit number (00, 01, 02, etc.) that determines execution order.
+   Each run.sh executes inside the ARM chroot environment and has full access to apt, systemctl, and other ARM binaries.
+   
+   Example scripts:
+   - 00-test-setup/run.sh: Install basic packages (cowsay, vim, etc.)
+   - 01-systemd/run.sh: Install and configure Docker
+
+10. Cross-Architecture Chroot Mechanism
+
+    The system uses QEMU user-mode emulation to run ARM binaries on x86:
+    - qemu-user-static provides ARM64 emulation
+    - binfmt_misc kernel feature automatically invokes QEMU for ARM binaries
+    - qemu-aarch64-static is copied into the rootfs before chroot
+    - When chroot executes ARM binaries, the kernel transparently uses QEMU
+    - From inside the chroot, the environment appears as native ARM64
+    
+    This allows full customization of the Jetson rootfs without requiring ARM hardware.
+
+11. Hardware Requirements
+
+    - x86 Windows workstation with WSL2 enabled
+    - Docker Desktop for Windows (with WSL2 backend)
+    - USB connection to Jetson device
+    - Jetson device in recovery mode during flashing
+
+12. Usage Workflow
+
+    1. Add customization scripts to /scripts directory (optional)
+    2. Modify docker-compose.yml if different JetPack version or credentials needed (optional)
+    3. Run `docker-compose build` to create the image with BSP (one-time, cached)
+    4. Connect Jetson device in recovery mode
+    5. Run `docker-compose up` to customize and flash
+    6. Press Enter when prompted to begin flashing
+    7. Wait for completion - device boots with all customizations applied
+
+
+1. Overview
+
+   This specification defines a reproducible, one-shot provisioning and flashing pipeline for NVIDIA Jetson devices (Orin Nano Super class) built and executed from an x86 Windows workstation or linux env.
+   All provisioning occurs inside a Linux environment running under WSL2 and using docker to flash the devices and build the rootfs.
    Rootfs customization is performed via cross-architecture chroot using qemu-user-static.
    Final flashing uses NVIDIA’s standard flash scripts.
 
@@ -16,15 +155,15 @@ Owner: Thomas Cousins
 
 - Fully reproducible builds under version control.
 
-- Works from any x86 Windows machine without dedicated Ubuntu hardware.
+- Works from any x86 Windows machine without dedicated Ubuntu hardware via the use of containers.
 
 3. High-Level Method
 
 - WSL2 provides a Linux environment capable of running Docker or native Bash.
 
-- NVIDIA L4T BSP and base rootfs are unpacked inside a running x86 container. (based on arguments from the user or defaults)
+- NVIDIA L4T BSP and base rootfs are downloaded and unpacked inside a running x86 container. (version based on arguments from the user or defaults)
 
-- Rootfs is customized by performing a cross-architecture chroot using qemu-aarch64-static and binfmt_misc.
+- Rootfs is customized by performing a cross-architecture chroot within the container using qemu-aarch64-static and binfmt_misc.
 
 - Customization scripts modify the ARM root filesystem (install packages, enable/disable services, add configs, add our applications). These are provided to the container and the chroot from the repository, the structure is specified below.
 
@@ -33,118 +172,28 @@ Owner: Thomas Cousins
 - the specific flash command is also provided as an arg or default
 
 13. Repository Layout
-    /provisioning
     /scripts
-    01_setup_env.sh
-    02_unpack_bsp.sh
-    03_prepare_rootfs.sh
-    04_customize_rootfs.sh
-    05_finalize_rootfs.sh
-    06_flash.sh
-    /workspace
-    build artifacts, temporary mounts, chroot staging areas
-
-Everything under /provisioning is maintained in Git except for the downloaded BSP and rootfs.
+    docker-compose.yml
+    Dockerfile
+    .env
+    entrypoint.sh
+    README.md
 
 5. BSP and Rootfs Requirements
-   The NVIDIA JetPack / L4T bundle contains two major components:
-6. Bootloader + device configuration: stored in the BSP tarball.
-7. ARM64 root filesystem: l4t-rootfs.tar.gz.
-
-We store these in:
-/provisioning/bsp/JetPack_<version>/
-/provisioning/l4trootfs/
-
-Engineer downloads the BSP manually once. Everything after that is automated.
+    These are downloaded at the container runtime, based on the arguments they provide. 
+    This is to reduce permanent storage on device. The version is set in the env.sh
 
 6. Detailed Steps and Responsibilities
+    In order to run, the user must populate two things:
+    
+    1. The version of jetpack and the flash command within .env
 
-6.1 Environment Setup (WSL2)
-Install WSL2 with Ubuntu.
-Install required tools:
+    2. any scripts that they would like to be run on the extracted (and applied binaries) rootfs, within the scripts directory
 
-* qemu-user-static
-* binfmt-support
-* docker.io (optional)
-  Enable ARM64 emulation:
-  update-binfmts --enable qemu-aarch64.
+    once these are populated, the container is simply built using the docker compose, and then the user must start the container to get it running. 
 
-6.2 Unpack BSP and Base Rootfs
-Script: 02_unpack_bsp.sh
+    the container's OS version will default to Ubuntu 24.04, in line with jetpack 7.
 
-* Unpacks NVIDIA BSP to /provisioning/bsp
-* Unpacks l4trootfs.tar.gz into /provisioning/l4trootfs
-* Applies NVIDIA apply_binaries.sh to merge proprietary drivers into rootfs.
+    The container will hold the pre-modified rootfs within it, running the scripts and the flash command on runtime on the chrooted rootfs. 
 
-6.3 Cross-Architecture Chroot
-Script: 03_prepare_rootfs.sh
-
-* Copies /usr/bin/qemu-aarch64-static into /provisioning/l4trootfs/usr/bin
-* Bind-mounts /dev, /proc, /sys into rootfs so package install works.
-* Verifies that running “chroot /provisioning/l4trootfs /bin/bash -c ‘uname -a’” executes under qemu.
-
-6.4 Rootfs Customization
-Script: 04_customize_rootfs.sh
-Executed inside the chroot.
-Tasks performed here include:
-
-* apt-get install packages
-* add/remove systemd units
-* place your application stack and configs
-* add user accounts
-* disable unwanted services
-* install Docker or Podman (if used)
-* drop overlays from /provisioning/overlays into appropriate rootfs directories.
-
-This is the only step that modifies the image.
-
-6.5 Finalization
-Script: 05_finalize_rootfs.sh
-
-* Removes temporary mounts
-* Cleans package cache
-* Ensures /usr/bin/qemu-aarch64-static remains or is removed based on preference
-* Prepares final flash-ready rootfs.
-
-6.6 Flashing
-Script: 06_flash.sh
-
-* Uses NVIDIA flash.sh or l4t_initrd_flash.sh
-* Points to the board config and the customized rootfs
-* Requires the Jetson in recovery mode, attached to Windows and forwarded into WSL2 via usbipd
-* Produces a completely flashed device with no further steps required.
-
-7. USB Connectivity from Windows
-   The engineer must attach the Jetson’s USB recovery device into WSL2 using:
-   usbipd wsl attach --busid <BUS-ID>.
-   The script will fail if this is not done.
-
-8. Requirements for Success
-
-9. Engineer must run all scripts from inside WSL2, not pure Windows.
-
-10. Rootfs customization must only be done inside the cross-arch chroot.
-
-11. All scripts must exit on error and print clear logs.
-
-12. The flash script must reference the correct board configuration (exact cfg file determined per device).
-
-13. The BSP and rootfs versions must match.
-
-14. Outputs
-
-* Fully customized root filesystem
-* Reproducible provisioning logs
-* Flashable image
-* One-shot production-ready units
-
-10. Non-Goals
-
-* No containerized rootfs boot
-* No complex initrd overlays
-* No host-dependent post-configuration
-* No support for flashing from pure Windows without WSL2
-
----
-
-If you want, I can produce the matching /scripts skeleton (each script with comments and placeholder commands) so your engineer can copy/paste directly into the repo.
+    from a hardware standpoint, all the user will need to do is to plug up a Jetson in recovery mode, and follow through
