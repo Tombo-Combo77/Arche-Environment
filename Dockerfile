@@ -11,8 +11,13 @@ ARG DEFAULT_PASSWORD=Arche
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
+RUN sed -i 's|http://archive.ubuntu.com/ubuntu|https://azure.archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list \
+    && sed -i 's|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g' /etc/apt/sources.list \
+    && apt-get update
+
 # Install essential tools for cross-architecture chroot and flashing
-RUN apt-get update && apt-get install -y \
+# 1) Base tools (should be stable)
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     wget \
     curl \
     sudo \
@@ -20,18 +25,22 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     qemu-user-static \
-    binfmt-support \
     libxml2-utils \
+    udev \
+    tar \
+    openssh-client \
+    openssh-server \
+ && rm -rf /var/lib/apt/lists/*
+
+# 2) Jetson-specific / “might fail” extras in a separate layer
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     device-tree-compiler \
     lbzip2 \
     nfs-kernel-server \
-    abootimg \
-    udev \
-    cpio \
-    ssh \
     sshpass \
-    openssh-server \
-    && rm -rf /var/lib/apt/lists/*
+    # add cpio/abootimg back here only if you confirm they exist on 24.04
+ && rm -rf /var/lib/apt/lists/*
+
 
 # Set up working directory
 WORKDIR /workspace

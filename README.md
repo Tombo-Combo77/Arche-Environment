@@ -36,6 +36,16 @@ All provisioning occurs inside a Docker container with cross-architecture suppor
 
 ## Quick Start
 
+### 0. Connect the Orin and bind USB to WSL (windows 11)
+Put the orin into forced recovery mode and connect the device to your computer via the OTG port. 
+
+If on a windows machine follow these additional steps, then follow the rest of the quick start within WSL:
+  1. install `usbipd` from **within an admin cmd prompt**, and start wsl
+  2. Using `usbipd list` **within an admin cmd prompt** determine which device is the Orin, and note the BUSID (note, the orin will usually have a VID starting with 0955)
+  3. The USB device will need to be put into a shared state, **within the admin shell** run the following command `usbipd bind --busid "BUSID"`
+  4. Run `attach --wsl --busid "BUSID"`
+  5. in wsl, ensure that you can see the device with `lsusb`
+
 ### 1. Clone the Repository
 ```bash
 git clone https://github.com/Tombo-Combo77/Arche-Environment.git
@@ -53,6 +63,8 @@ scripts/
 Scripts run in numerical order (00, 01, 02, etc.) inside the ARM chroot environment.
 
 ### 3. Build the Docker Image
+**NOTE: if on windows, installing docker onto your host machine will provide docker, provided you enable WSL2 based engine!**
+
 ```bash
 docker-compose build
 ```
