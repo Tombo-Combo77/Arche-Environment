@@ -5,6 +5,7 @@ services:
     container_name: jetson-os-builder
     network_mode: "host"
     build:
+      network: host
       context: .
       dockerfile: Dockerfile
       args:
