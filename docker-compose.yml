@@ -3,6 +3,7 @@ version: '3.8'
 services:
   jetson-os-builder:
     container_name: jetson-os-builder
+    network_mode: "host"
     build:
       context: .
       dockerfile: Dockerfile
