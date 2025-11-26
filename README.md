@@ -12,6 +12,7 @@ This project enables you to:
 
 All provisioning occurs inside a Docker container with cross-architecture support via QEMU, allowing you to modify ARM64 Jetson rootfs from your x86 development machine.
 
+**NOTE** If you are using windows, you may need to use a tool like dos2unix in order to have the fgies be readable
 ## Features
 
 - **One-shot flashing**: Single command from build to deployed device
@@ -43,7 +44,7 @@ If on a windows machine follow these additional steps, then follow the rest of t
   1. install `usbipd` from **within an admin cmd prompt**, and start wsl
   2. Using `usbipd list` **within an admin cmd prompt** determine which device is the Orin, and note the BUSID (note, the orin will usually have a VID starting with 0955)
   3. The USB device will need to be put into a shared state, **within the admin shell** run the following command `usbipd bind --busid "BUSID"`
-  4. Run `attach --wsl --busid "BUSID"`
+  4. Run `usbipd attach --wsl --busid "BUSID"`
   5. in wsl, ensure that you can see the device with `lsusb`
 
 ### 1. Clone the Repository

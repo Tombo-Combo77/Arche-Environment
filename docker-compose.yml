@@ -9,12 +9,8 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        - JETPACK_VERSION=7.0
-        - L4T_VERSION=37.0.0
-        - BSP_URL=https://developer.nvidia.com/downloads/embedded/l4t/r37_release_v0.0/release/jetson_linux_r37.0.0_aarch64.tbz2
-        - ROOTFS_URL=https://developer.nvidia.com/downloads/embedded/l4t/r37_release_v0.0/release/tegra_linux_sample-root-filesystem_r37.0.0_aarch64.tbz2
-        - DEFAULT_USERNAME=Arche
-        - DEFAULT_PASSWORD=Arche
+        - BSP_URL=https://developer.nvidia.com/downloads/embedded/L4T/r38_Release_v2.1/release/Jetson_Linux_R38.2.1_aarch64.tbz2
+        - ROOTFS_URL=https://developer.nvidia.com/downloads/embedded/L4T/r38_Release_v2.1/release/Tegra_Linux_Sample-Root-Filesystem_R38.2.1_aarch64.tbz2
     privileged: true
     volumes:
       - ./scripts:/workspace/scripts:ro
@@ -23,8 +19,10 @@ services:
     devices:
       - /dev/bus/usb:/dev/bus/usb
     environment:
+      - DEFAULT_USERNAME=Arche
+      - DEFAULT_PASSWORD=Arche
       - BOARD=jetson-orin-nano-devkit
-      - FLASH_CMD=flash.sh jetson-orin-nano-devkit internal
+      - FLASH_CMD=sudo ./flash.sh jetson-orin-nano-devkit-super-nvme internal
     stdin_open: true
     tty: true
 
