@@ -1,34 +1,33 @@
 # Arche-Environment
 
-A reproducible, one-shot provisioning and flashing pipeline for NVIDIA Jetson devices, built and executed from an x86 Windows workstation using Docker and WSL2.
+A reproducible, three-phase provisioning and flashing pipeline for NVIDIA Jetson devices, built and executed from an Ubuntu 22.04 virtual machine or native Linux environment.
 
 ## Overview
 
 This project enables you to:
-- Flash fully customized Jetson images with a single command
+- Flash fully customized Jetson images using a clear three-step process
 - Create reproducible builds under version control
-- Customize the Jetson rootfs on x86 hardware using cross-architecture emulation
+- Customize the Jetson rootfs using cross-architecture emulation
 - Deploy Jetson devices ready-to-use with pre-configured user accounts and applications
 
-All provisioning occurs inside a Docker container with cross-architecture support via QEMU, allowing you to modify ARM64 Jetson rootfs from your x86 development machine.
-
-**NOTE** If you are using windows, you may need to use a tool like dos2unix in order to have the fgies be readable
+The pipeline uses a three-phase approach: **staging** (prepare BSP), **building** (customize rootfs), and **flashing** (deploy to device). All customization occurs via cross-architecture chroot using QEMU, allowing you to modify ARM64 Jetson rootfs from your x86_64 development machine.
 ## Features
 
-- **One-shot flashing**: Single command from build to deployed device
+- **Three-phase process**: Clear separation of staging, building, and flashing phases
 - **Pre-configured user account**: Device boots ready-to-use with default credentials
-- **Efficient caching**: BSP downloads happen once during image build, not every run
+- **Efficient caching**: BSP downloads are cached locally and reused across builds
 - **Cross-architecture chroot**: Full ARM emulation via QEMU for authentic customization
 - **Flexible customization**: Add your own scripts to install packages, configure services, deploy applications
 - **Version controlled**: All configuration in git-trackable files
+- **No containers required**: Native Ubuntu environment for maximum compatibility
 
 ## Prerequisites
 
 ### Required
-- Windows 10/11 with WSL2 enabled
-- Docker Desktop for Windows (with WSL2 backend enabled)
+- Ubuntu 22.04 LTS (virtual machine or native installation)
+- Minimum 20GB free disk space
 - USB connection to target Jetson device
-- Internet connection (for BSP downloads during build)
+- Internet connection (for BSP downloads during staging)
 
 ### Supported Devices
 - NVIDIA Jetson Orin Nano Super (8GB/4GB)
@@ -37,23 +36,28 @@ All provisioning occurs inside a Docker container with cross-architecture suppor
 
 ## Quick Start
 
-### 0. Connect the Orin and bind USB to WSL (windows 11)
-Put the orin into forced recovery mode and connect the device to your computer via the OTG port. 
-
-If on a windows machine follow these additional steps, then follow the rest of the quick start within WSL:
-  1. install `usbipd` from **within an admin cmd prompt**, and start wsl
-  2. Using `usbipd list` **within an admin cmd prompt** determine which device is the Orin, and note the BUSID (note, the orin will usually have a VID starting with 0955)
-  3. The USB device will need to be put into a shared state, **within the admin shell** run the following command `usbipd bind --busid "BUSID"`
-  4. Run `usbipd attach --wsl --busid "BUSID"`
-  5. in wsl, ensure that you can see the device with `lsusb`
-
 ### 1. Clone the Repository
 ```bash
 git clone https://github.com/Tombo-Combo77/Arche-Environment.git
 cd Arche-Environment
 ```
 
-### 2. (Optional) Add Custom Scripts
+### 2. Install Dependencies
+```bash
+chmod +x install-dependencies.sh
+./install-dependencies.sh
+```
+
+This installs all required packages for Jetson flashing including QEMU, device tree compiler, and other essential tools.
+
+### 3. (Optional) Configure Settings
+Edit `config.sh` to customize:
+- JetPack/L4T version
+- Default user credentials  
+- Target board type
+- Flash command
+
+### 4. (Optional) Add Custom Scripts
 Add customization scripts to the `scripts/` directory:
 ```
 scripts/
@@ -63,21 +67,28 @@ scripts/
 
 Scripts run in numerical order (00, 01, 02, etc.) inside the ARM chroot environment.
 
-### 3. Build the Docker Image
-**NOTE: if on windows, installing docker onto your host machine will provide docker, provided you enable WSL2 based engine!**
-
+### 5. Run Staging Phase
 ```bash
-docker-compose build
+chmod +x stage.sh
+./stage.sh
 ```
 
-This downloads the NVIDIA L4T BSP (~2GB), extracts the rootfs, applies binaries, and creates the default user. **This step takes 15-30 minutes** but only needs to run once (or when you change JetPack versions).
+This downloads the NVIDIA L4T BSP (~2GB), extracts the rootfs, applies binaries, and creates the default user. **This step takes 15-30 minutes** but only needs to run once per JetPack version.
 
-### 4. Connect Your Jetson in Recovery Mode
+### 6. Run Building Phase
+```bash
+chmod +x build.sh
+./build.sh
+```
+
+This runs your customization scripts in the ARM chroot environment. **Can be run multiple times** to test different script configurations.
+
+### 7. Connect Your Jetson in Recovery Mode
 
 **For Jetson Orin Nano Developer Kit:**
 1. Disconnect power
 2. Place jumper on pins 9-10 (FC REC and GND) of the button header
-3. Connect USB-C cable to your PC
+3. Connect USB-C cable to your Ubuntu machine
 4. Reconnect power
 
 Verify recovery mode:
@@ -86,51 +97,49 @@ lsusb | grep -i nvidia
 ```
 You should see: `ID 0955:7523 NVIDIA Corp.`
 
-### 5. Flash the Device
+### 8. Run Flashing Phase
 ```bash
-docker-compose up
+chmod +x flash.sh
+./flash.sh
 ```
 
-The container will:
-- Run your customization scripts in the ARM chroot
-- Prompt you to confirm before flashing
-- Flash the device when you press Enter
+This will:
+- Verify the device is in recovery mode
+- Show a summary of what will be flashed
+- Prompt for confirmation before flashing
+- Flash the customized image to the device
 
 **Flashing takes 10-20 minutes.** The device will reboot automatically when complete.
 
-### 6. Boot Your Jetson
+### 9. Boot Your Jetson
 
 Remove the recovery mode jumper and reboot. Your Jetson will boot with:
-- Username: `Arche`
-- Password: `Arche`
+- Username: `Arche` (or your configured username)
+- Password: `Arche` (or your configured password)
 - All your customizations applied
 
 ## Configuration
 
+All configuration is managed in the `config.sh` file:
+
 ### Change JetPack Version
-Edit `docker-compose.yml`:
-```yaml
-args:
-  - JETPACK_VERSION=7.0
-  - L4T_VERSION=37.0.0
-  - BSP_URL=https://developer.nvidia.com/downloads/...
-  - ROOTFS_URL=https://developer.nvidia.com/downloads/...
+```bash
+export JETPACK_VERSION="7.0"
+export L4T_VERSION="37.0.0"
+export BSP_URL="https://developer.nvidia.com/downloads/..."
+export ROOTFS_URL="https://developer.nvidia.com/downloads/..."
 ```
 
 ### Change Default Credentials
-Edit `docker-compose.yml`:
-```yaml
-args:
-  - DEFAULT_USERNAME=myuser
-  - DEFAULT_PASSWORD=mypassword
+```bash
+export DEFAULT_USERNAME="myuser"
+export DEFAULT_PASSWORD="mypassword"
 ```
 
 ### Change Target Board
-Edit `docker-compose.yml`:
-```yaml
-environment:
-  - BOARD=jetson-agx-orin-devkit
-  - FLASH_CMD=flash.sh jetson-agx-orin-devkit internal
+```bash
+export BOARD="jetson-agx-orin-devkit"
+export FLASH_CMD="sudo ./flash.sh jetson-agx-orin-devkit internal"
 ```
 
 ## Customization Scripts
@@ -183,81 +192,116 @@ Scripts run inside the ARM chroot with:
 
 ```
 Arche-Environment/
-├── docker-compose.yml    # Main configuration (versions, credentials, board)
-├── Dockerfile           # Build instructions (downloads BSP, sets up rootfs)
-├── entrypoint.sh        # Runtime script (runs customizations, flashes device)
-├── scripts/             # User customization scripts
+├── config.sh                   # Main configuration (versions, credentials, board)
+├── install-dependencies.sh     # Dependency installation script
+├── stage.sh                   # Phase 1: Download BSP, setup rootfs
+├── build.sh                   # Phase 2: Run customization scripts
+├── flash.sh                   # Phase 3: Flash device
+├── scripts/                   # User customization scripts
 │   ├── 00-test-setup/
-│   │   └── run.sh      # Example: Install basic packages
+│   │   └── run.sh            # Example: Install basic packages
 │   └── 01-systemd/
-│       └── run.sh      # Example: Install Docker
+│       └── run.sh            # Example: Install Docker
+├── downloads/                 # Cache directory for BSP/rootfs (created automatically)
+├── Linux_for_Tegra/          # Extracted BSP (created by stage.sh)
 ├── spec/
-│   └── jetson-os-builder.spec  # Detailed specification
-└── README.md           # This file
+│   └── jetson-os-builder.spec # Detailed specification
+└── README.md                 # This file
 ```
 
 ## How It Works
 
-### Build Phase (`docker-compose build`)
-1. Starts with Ubuntu 24.04 base image
-2. Installs QEMU and flashing tools
-3. Downloads NVIDIA L4T BSP and rootfs (~2GB)
-4. Extracts BSP and rootfs
-5. Runs `apply_binaries.sh` to apply NVIDIA drivers
-6. Runs `l4t_create_default_user.sh` to create default user
-7. Result: Docker image with ready-to-customize rootfs
+### Staging Phase (`./stage.sh`)
+1. Downloads and caches NVIDIA L4T BSP and rootfs (~2GB)
+2. Extracts BSP to `Linux_for_Tegra/` directory
+3. Extracts rootfs to `Linux_for_Tegra/rootfs/`
+4. Runs `apply_binaries.sh` to apply NVIDIA drivers to rootfs
+5. Runs `l4t_create_default_user.sh` to create default user account
+6. Result: Fully prepared BSP and rootfs ready for customization
 
-### Runtime Phase (`docker-compose up`)
+### Building Phase (`./build.sh`)
 1. Copies QEMU ARM emulator into rootfs
-2. Runs customization scripts in numerical order via `chroot`
-3. Each script executes in ARM environment (via QEMU emulation)
-4. Waits for user confirmation
-5. Executes NVIDIA flash script to write to device
+2. Sets up chroot environment (bind mounts /dev, /proc, /sys)
+3. Runs customization scripts in numerical order via `chroot`
+4. Each script executes in ARM environment (via QEMU emulation)
+5. Cleans up QEMU binary and unmounts chroot environment
+6. Result: Customized rootfs ready for flashing
+
+### Flashing Phase (`./flash.sh`)
+1. Verifies Jetson device is connected in recovery mode
+2. Shows summary of what will be flashed
+3. Prompts user for confirmation
+4. Executes NVIDIA flash script to write image to device
+5. Reports success or failure with diagnostics
 
 ### Cross-Architecture Magic
-- **QEMU user-mode emulation** translates ARM64 instructions to x86
+- **QEMU user-mode emulation** translates ARM64 instructions to x86_64
 - **binfmt_misc** kernel feature automatically invokes QEMU for ARM binaries
 - Inside the chroot, everything appears as native ARM64
 - Your customization scripts work exactly as they would on real Jetson hardware
 
 ## Troubleshooting
 
-### "ERROR: BSP not found"
-The Docker image wasn't built properly. Run `docker-compose build` again.
+### "ERROR: Staging not found"
+Run `./stage.sh` first to download and prepare the BSP and rootfs.
+
+### "ERROR: Dependencies not installed"
+Run `./install-dependencies.sh` to install all required packages.
 
 ### Device Not Detected in Recovery Mode
 - Check USB cable connection
 - Verify recovery mode jumper placement
 - Run `lsusb | grep -i nvidia` to confirm device is visible
+- Try a different USB port or cable
 
 ### Flash Fails
-- Ensure you have the correct `BOARD` and `FLASH_CMD` in `docker-compose.yml`
+- Ensure you have the correct `BOARD` and `FLASH_CMD` in `config.sh`
 - Check that the device is in recovery mode
 - Verify the BSP version matches your hardware
+- Try running with `sudo` if permission errors occur
 
 ### Customization Script Fails
-- Test your script syntax outside the container first
-- Check logs: the entrypoint shows which script failed
-- Remember: scripts run in ARM environment, not x86
+- Test your script syntax in a regular bash shell first
+- Check that all required packages are available in the chroot
+- Remember: scripts run in ARM environment, not x86_64
+- Use `set -x` in your script for detailed debugging output
+
+### QEMU Emulation Issues
+- Verify binfmt_misc is working: `ls /proc/sys/fs/binfmt_misc/`
+- Check that qemu-aarch64-static is installed: `which qemu-aarch64-static`
+- Restart binfmt-support service: `sudo systemctl restart binfmt-support`
 
 ## Advanced Usage
 
 ### Skip Customization Scripts
-To flash without running scripts, temporarily rename the `scripts/` directory.
+To flash without running scripts, temporarily rename the `scripts/` directory or run `./flash.sh` directly after staging.
 
-### Rebuild After BSP Changes
+### Re-stage After BSP Version Changes
 ```bash
-docker-compose build --no-cache
+./stage.sh
+```
+This will re-download and extract the new BSP version.
+
+### Test Scripts Without Flashing
+```bash
+./stage.sh   # Once per BSP version
+./build.sh   # Run multiple times to test scripts
 ```
 
-### View Container Logs
+### Debug Script Issues
+Add debugging to your scripts:
 ```bash
-docker-compose up 2>&1 | tee flash.log
+#!/bin/bash
+set -ex  # Exit on error, show commands
+echo "Starting custom setup..."
+# Your commands here
 ```
 
-### Interactive Container Access
+### Manual Chroot Access
+For debugging, you can manually enter the chroot:
 ```bash
-docker-compose run --entrypoint /bin/bash jetson-os-builder
+sudo cp /usr/bin/qemu-aarch64-static Linux_for_Tegra/rootfs/usr/bin/
+sudo chroot Linux_for_Tegra/rootfs /bin/bash
 ```
 
 ## Resources
@@ -281,4 +325,4 @@ Contributions welcome! Please:
 
 ---
 
-**Jetson Orin Nano Super ready-to-deploy in one command. Build once, flash many times.**
+**Jetson Orin Nano Super ready-to-deploy in three clear steps. Stage once, build repeatedly, flash when ready.**
