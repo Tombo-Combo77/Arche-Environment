@@ -1,0 +1,14 @@
+[Unit]
+Description=Arche Runtime Service
+After=network.target
+
+[Service]
+Type=simple
+User=Arche
+Group=Arche
+WorkingDirectory=/home/Arche
+ExecStart=/bin/true
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

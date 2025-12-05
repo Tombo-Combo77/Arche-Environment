@@ -115,6 +115,7 @@ apt-get install -y --no-install-recommends \
     apt-transport-https \
     ca-certificates \
     gnupg \
+    docker.io \
     lsb-release
 
 echo "✓ Essential packages installed"

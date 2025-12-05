@@ -1,0 +1,13 @@
+[connection]
+id=static-ip
+type=ethernet
+interface-name=eth0
+autoconnect=true
+
+[ipv4]
+method=manual
+address1=192.168.1.100/24
+dns=8.8.8.8;8.8.4.4;
+
+[ipv6]
+method=auto
