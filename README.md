@@ -44,7 +44,6 @@ cd Arche-Environment
 
 ### 2. Install Dependencies
 ```bash
-chmod +x install-dependencies.sh
 ./install-dependencies.sh
 ```
 

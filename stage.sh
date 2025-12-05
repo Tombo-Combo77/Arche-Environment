@@ -13,6 +13,8 @@ echo "Target Board: ${BOARD}"
 echo "Default User: ${DEFAULT_USERNAME}"
 echo "=========================================="
 
+if [ "$EUID" -ne 0 ]; then echo "ERROR: This script must be run with sudo or as root" >&2; exit 1; fi
+
 # Check if already staged
 if [ -d "${WORK_DIR}" ] && [ -d "${ROOTFS_DIR}" ] && [ -f "${WORK_DIR}/apply_binaries.sh" ]; then
     read -p "Staging appears to be already complete. Re-stage? (y/N): " -n 1 -r
@@ -27,7 +29,7 @@ fi
 
 echo "Creating workspace directories..."
 mkdir -p "${DOWNLOAD_DIR}"
-mkdir -p "$(dirname "${WORK_DIR}")"
+mkdir -p "${NATIVE_WORK_DIR}"
 
 # Download BSP if not already cached
 BSP_FILENAME=$(basename "${BSP_URL}")
@@ -56,14 +58,16 @@ else
 fi
 
 # Extract BSP
-echo "Extracting BSP..."
-tar -xjf "${BSP_PATH}" -C "${WORKSPACE_DIR}/"
+echo "Extracting BSP to native Linux filesystem..."
+cd "${NATIVE_WORK_DIR}"
+sudo tar --no-same-owner -xjf "${BSP_PATH}"
 echo "✓ BSP extracted to ${WORK_DIR}"
 
 # Extract rootfs
-echo "Extracting rootfs..."
+echo "Extracting rootfs to native Linux filesystem..."
 mkdir -p "${ROOTFS_DIR}"
-sudo tar -xjf "${ROOTFS_PATH}" -C "${ROOTFS_DIR}"
+cd "${ROOTFS_DIR}"
+sudo tar --no-same-owner -xjf "${ROOTFS_PATH}"
 echo "✓ Rootfs extracted to ${ROOTFS_DIR}"
 
 # Change to BSP directory for remaining operations
@@ -78,11 +82,6 @@ echo "✓ NVIDIA binaries applied"
 echo "Creating default user account..."
 sudo ./tools/l4t_create_default_user.sh -u "${DEFAULT_USERNAME}" -p "${DEFAULT_PASSWORD}" -a --accept-license
 echo "✓ Default user '${DEFAULT_USERNAME}' created"
-
-# Set proper permissions
-echo "Setting rootfs permissions..."
-sudo chown -R root:root "${ROOTFS_DIR}"
-echo "✓ Permissions set"
 
 echo ""
 echo "=========================================="

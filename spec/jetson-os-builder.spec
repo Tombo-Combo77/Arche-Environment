@@ -39,10 +39,12 @@ Title: Jetson Provisioning & Flashing Pipeline Specification
 
 4. Repository Layout
     /scripts/
-        00-test-setup/
+        00-apt-setup/
             run.sh
-        01-systemd/
+        99-development-setup/
             run.sh
+            files/
+                netplan-static-ip.yaml
         (additional numbered directories)
     /spec/
         jetson-os-builder.spec
@@ -63,8 +65,8 @@ Title: Jetson Provisioning & Flashing Pipeline Specification
    - Consistent build environment across all runs
    
    Version configuration is set in config.sh:
-   - JETPACK_VERSION (default: 7.0)
-   - L4T_VERSION (default: 37.0.0)
+   - JETPACK_VERSION (default: 6.0)
+   - L4T_VERSION (default: 36.3.0)
    - BSP_URL and ROOTFS_URL (download links)
 
 6. User Configuration
@@ -73,9 +75,14 @@ Title: Jetson Provisioning & Flashing Pipeline Specification
    - DEFAULT_USERNAME (default: Arche)
    - DEFAULT_PASSWORD (default: Arche)
    
+   Development mode configuration:
+   - DEVELOPMENT_MODE (true/false) - Controls optional development features
+   - DEV_STATIC_IP (default: 192.168.1.100) - Static IP for development builds
+   - DEV_VNC_PASSWORD and DEV_VNC_PORT - VNC access configuration
+   
    Board and flash command are set in config.sh:
    - BOARD (e.g., jetson-orin-nano-devkit)
-   - FLASH_CMD (e.g., sudo ./flash.sh jetson-orin-nano-devkit-super-nvme internal)
+   - FLASH_CMD (uses l4t_initrd_flash.sh for NVMe boot configuration)
 
 7. Staging Phase (stage.sh)
    
@@ -120,9 +127,12 @@ Title: Jetson Provisioning & Flashing Pipeline Specification
     Where NN is a two-digit number (00, 01, 02, etc.) that determines execution order.
     Each run.sh executes inside the ARM chroot environment and has full access to apt, systemctl, and other ARM binaries.
     
-    Example scripts:
-    - 00-test-setup/run.sh: Install basic packages (cowsay, vim, etc.)
+    Standard scripts:
+    - 00-apt-setup/run.sh: Configure Ubuntu package repositories (fixes default Tegra minimal sources)
     - 01-systemd/run.sh: Install and configure Docker
+    - 99-development-setup/run.sh: Configure static IP (development mode only)
+    
+    Development mode scripts are automatically skipped when DEVELOPMENT_MODE="false".
 
 11. Cross-Architecture Chroot Mechanism
 

@@ -11,6 +11,8 @@ echo "Target Board: ${BOARD}"
 echo "Flash Command: ${FLASH_CMD}"
 echo "=========================================="
 
+if [ "$EUID" -ne 0 ]; then echo "ERROR: This script must be run with sudo or as root" >&2; exit 1; fi
+
 # Verify staging and build were completed
 if [ ! -d "${WORK_DIR}" ] || [ ! -d "${ROOTFS_DIR}" ]; then
     echo "ERROR: Staging not found. Please run './stage.sh' first."

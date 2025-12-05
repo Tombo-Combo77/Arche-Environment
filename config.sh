@@ -13,16 +13,29 @@ export ROOTFS_URL="https://developer.nvidia.com/downloads/embedded/L4T/r36_Relea
 export DEFAULT_USERNAME="Arche"
 export DEFAULT_PASSWORD="Arche"
 
+# Development mode configuration
+export DEVELOPMENT_MODE="false"  # Set to "false" for production builds
+
 # Target board configuration
 export BOARD="jetson-orin-nano-devkit"
-export FLASH_CMD="sudo ./flash.sh jetson-orin-nano-devkit-super-nvme internal"
+export FLASH_CMD='sudo ./tools/kernel_flash/l4t_initrd_flash.sh --external-device nvme0n1p1 \
+  -c tools/kernel_flash/flash_l4t_t234_nvme.xml \
+  -p "-c bootloader/generic/cfg/flash_t234_qspi.xml" \
+  --showlogs --network usb0 \
+  jetson-orin-nano-devkit internal'
+
+# export FLASH_CMD="sudo ./flash.sh jetson-orin-nano-devkit nvme0n1p1"
 
 # Workspace directories
 export WORKSPACE_DIR="$(pwd)"
-export WORK_DIR="${WORKSPACE_DIR}/Linux_for_Tegra"
-export ROOTFS_DIR="${WORK_DIR}/rootfs"
 export SCRIPTS_DIR="${WORKSPACE_DIR}/scripts"
 export DOWNLOAD_DIR="${WORKSPACE_DIR}/downloads"
+
+# Use native Linux filesystem for extraction to avoid WSL symlink issues
+export EXTRACT_DIR="/home/$SUDO_USER"
+export NATIVE_WORK_DIR="${EXTRACT_DIR}/jetson-build"
+export WORK_DIR="${NATIVE_WORK_DIR}/Linux_for_Tegra"
+export ROOTFS_DIR="${WORK_DIR}/rootfs"
 
 # Create download directory if it doesn't exist
 mkdir -p "${DOWNLOAD_DIR}"
@@ -32,4 +45,5 @@ echo "  JetPack Version: ${JETPACK_VERSION}"
 echo "  L4T Version: ${L4T_VERSION}"
 echo "  Default User: ${DEFAULT_USERNAME}"
 echo "  Target Board: ${BOARD}"
+echo "  Development Mode: ${DEVELOPMENT_MODE}"
 echo "  Workspace: ${WORKSPACE_DIR}"

@@ -11,6 +11,8 @@ echo "Target Board: ${BOARD}"
 echo "Customizing rootfs with cross-architecture chroot"
 echo "=========================================="
 
+if [ "$EUID" -ne 0 ]; then echo "ERROR: This script must be run with sudo or as root" >&2; exit 1; fi
+
 # Verify staging was completed
 if [ ! -d "${WORK_DIR}" ] || [ ! -d "${ROOTFS_DIR}" ]; then
     echo "ERROR: Staging not found. Please run './stage.sh' first."
@@ -44,12 +46,15 @@ echo "Found ${SCRIPT_COUNT} customization script(s) to execute"
 # Set up cleanup function
 cleanup_chroot_mounts() {
     echo "Cleaning up chroot mounts..."
+    sudo umount "${ROOTFS_DIR}/run"     2>/dev/null || true
+    sudo umount "${ROOTFS_DIR}/tmp"     2>/dev/null || true
     sudo umount "${ROOTFS_DIR}/dev/pts" 2>/dev/null || true
     sudo umount "${ROOTFS_DIR}/dev"     2>/dev/null || true
     sudo umount "${ROOTFS_DIR}/proc"    2>/dev/null || true
     sudo umount "${ROOTFS_DIR}/sys"     2>/dev/null || true
     sudo umount "${ROOTFS_DIR}/etc/resolv.conf" 2>/dev/null || true
     sudo rm -f "${ROOTFS_DIR}/usr/bin/qemu-aarch64-static" 2>/dev/null || true
+    sudo rm -f "${ROOTFS_DIR}/usr/sbin/policy-rc.d" 2>/dev/null || true
 }
 
 # Register cleanup on exit
@@ -59,6 +64,18 @@ trap cleanup_chroot_mounts EXIT
 echo "Setting up cross-architecture chroot environment..."
 sudo cp /usr/bin/qemu-aarch64-static "${ROOTFS_DIR}/usr/bin/"
 echo "✓ QEMU ARM64 emulator copied to rootfs"
+
+# Create policy-rc.d to prevent services from starting during package installation
+echo "Setting up chroot policy-rc.d..."
+sudo tee "${ROOTFS_DIR}/usr/sbin/policy-rc.d" > /dev/null << 'EOF'
+#!/bin/bash
+exit 101
+EOF
+sudo chmod +x "${ROOTFS_DIR}/usr/sbin/policy-rc.d"
+
+# Set up basic locale to prevent package installation issues
+echo "Configuring basic locale..."
+echo "en_US.UTF-8 UTF-8" | sudo tee "${ROOTFS_DIR}/etc/locale.gen" > /dev/null
 
 # Prepare chroot environment
 echo "Preparing chroot environment..."
@@ -70,13 +87,18 @@ sudo mkdir -p \
     "${ROOTFS_DIR}/proc" \
     "${ROOTFS_DIR}/sys" \
     "${ROOTFS_DIR}/etc" \
-    "${ROOTFS_DIR}/tmp"
+    "${ROOTFS_DIR}/tmp" \
+    "${ROOTFS_DIR}/run"
 
 # Bind host pseudo-filesystems into rootfs
 sudo mount --bind /dev        "${ROOTFS_DIR}/dev"
 sudo mount --bind /dev/pts    "${ROOTFS_DIR}/dev/pts" || true
 sudo mount --bind /proc       "${ROOTFS_DIR}/proc"
 sudo mount --bind /sys        "${ROOTFS_DIR}/sys"
+
+# Mount tmpfs for /run and /tmp
+sudo mount -t tmpfs tmpfs "${ROOTFS_DIR}/run" 2>/dev/null || sudo mount --bind /run "${ROOTFS_DIR}/run"
+sudo mount -t tmpfs tmpfs "${ROOTFS_DIR}/tmp" 2>/dev/null || true
 
 # Bind host DNS config into chroot
 if [ -f /etc/resolv.conf ]; then
@@ -87,12 +109,27 @@ fi
 
 echo "✓ Chroot environment prepared"
 
+# Verify ARM64 emulation is working
+echo "Verifying ARM64 emulation..."
+if ! sudo chroot "${ROOTFS_DIR}" /bin/bash -c "uname -m" | grep -q aarch64; then
+    echo "ERROR: ARM64 emulation not working properly"
+    cleanup_chroot_mounts
+    exit 1
+fi
+echo "✓ ARM64 emulation verified"
+
 # Execute customization scripts in numerical order
 echo "Executing customization scripts..."
 
 for script_dir in $(find "${SCRIPTS_DIR}" -maxdepth 1 -type d -name "*-*" | sort); do
     script_name="$(basename "${script_dir}")"
     run_script="${script_dir}/run.sh"
+
+    # Skip development scripts if development mode is disabled
+    if [[ "${script_name}" == *"development"* ]] && [ "${DEVELOPMENT_MODE}" != "true" ]; then
+        echo "⚠ Skipping ${script_name} (development mode disabled)"
+        continue
+    fi
 
     if [ -f "${run_script}" ]; then
         echo ""
@@ -105,8 +142,13 @@ for script_dir in $(find "${SCRIPTS_DIR}" -maxdepth 1 -type d -name "*-*" | sort
         # Make the script executable
         sudo chmod +x "${ROOTFS_DIR}/tmp/${script_name}/run.sh"
 
-        # Execute within chroot
-        if sudo chroot "${ROOTFS_DIR}" /bin/bash -c "cd /tmp/${script_name} && bash run.sh"; then
+        # Execute within chroot with proper environment
+        if sudo chroot "${ROOTFS_DIR}" /usr/bin/env -i \
+            DEBIAN_FRONTEND=noninteractive \
+            LC_ALL=C \
+            LANGUAGE=C \
+            PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            /bin/bash -c "cd /tmp/${script_name} && bash run.sh"; then
             echo "✓ ${script_name} completed successfully"
         else
             echo "✗ ${script_name} failed!"
