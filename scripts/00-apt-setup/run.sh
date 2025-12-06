@@ -23,6 +23,21 @@ exit 101
 EOF
 chmod +x /usr/sbin/policy-rc.d
 
+# Disable man-db triggers to prevent errors during package installation
+echo "Disabling man-db updates during package installation..."
+cat > /etc/dpkg/dpkg.cfg.d/excludes << 'EOF'
+# Exclude man-db triggers during chroot package installation
+path-exclude=/usr/share/man/*
+path-exclude=/usr/share/doc/*
+path-exclude=/usr/share/info/*
+path-exclude=/usr/share/lintian/*
+path-exclude=/usr/share/linda/*
+EOF
+
+# Divert mandb to prevent it from running during package installation
+dpkg-divert --local --rename --add /usr/bin/mandb
+ln -sf /bin/true /usr/bin/mandb
+
 # Prevent only service start/stop operations, allow enable/disable
 if [ ! -f /bin/systemctl.orig ]; then
     mv /bin/systemctl /bin/systemctl.orig 2>/dev/null || true
@@ -119,6 +134,11 @@ apt-get install -y --no-install-recommends \
     lsb-release
 
 echo "✓ Essential packages installed"
+
+# Restore mandb
+echo "Restoring mandb..."
+rm -f /usr/bin/mandb
+dpkg-divert --rename --remove /usr/bin/mandb
 
 # Restore original systemctl if we modified it
 if [ -f /bin/systemctl.orig ]; then
